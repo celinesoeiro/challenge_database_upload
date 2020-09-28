@@ -1,9 +1,11 @@
 import csvParse from 'csv-parse';
 import fs from 'fs';
-import { getRepository, In } from 'typeorm';
+import { getRepository, In, getCustomRepository } from 'typeorm';
 
 import Transaction from '../models/Transaction';
 import Category from '../models/Category';
+
+import TransactionsRepository from '../repositories/TransactionsRepository';
 
 interface CSVResponse {
   title: string;
@@ -27,26 +29,19 @@ class ImportTransactionsService {
     const categories: string[] = [];
 
     parseCSV.on('data', async line => {
-      line.map( (cell : string) => {
+      const [title, type, value, category] = line.map((cell : string) =>
+        cell.trim()
+      );
 
-        let splited = cell.split(';')
+      if (title === undefined || type === undefined || value === undefined) return;
 
-        const title = splited[0];
-        const type = splited[1] as unknown as CSVResponse['type'];
-        const value = splited[2] as unknown as CSVResponse['value'];
-        const category = splited[3];
-
-        // Senão tiver essas infos, nao adiciona na table
-        if (title === undefined || type === undefined || value === undefined) return;
-
-        transactions.push({
-          title,
-          type,
-          value,
-          category
-        });
-        categories.push(category);
+      transactions.push({
+        title,
+        type,
+        value,
+        category
       });
+      categories.push(category);
 
     });
 
@@ -65,9 +60,9 @@ class ImportTransactionsService {
       (category : Category ) => category.title
     );
 
-    const newCategories = categories.filter(
-      category => !existingCategoriesTitle.includes(category)
-    ).filter((value, index, self) => self.indexOf(value) === index);
+    const newCategories = categories
+    .filter(category => !existingCategoriesTitle.includes(category))
+    .filter((value, index, self) => self.indexOf(value) === index);
 
     const addCategories = categoryRepo.create(
       newCategories.map(category => ({
@@ -79,7 +74,7 @@ class ImportTransactionsService {
     const allCategories = [...newCategories, ...checkExistingCategories] as Category[];
 
     // Adicionando as transações no db
-    const transactionRepo = getRepository(Transaction);
+    const transactionsRepo = getCustomRepository(TransactionsRepository);
 
     function getCategoryId(transaction: CSVResponse){
       let id = '';
@@ -92,16 +87,19 @@ class ImportTransactionsService {
       return id;
     }
 
-    const newTransactions = transactionRepo.create(
+    const newTransactions = transactionsRepo.create(
       transactions.map(transaction => ({
         title: transaction.title,
         value: transaction.value,
         type: transaction.type,
-        category_id: getCategoryId(transaction),
+        category: allCategories.find(
+          category => category.title === transaction.category
+        ),
+        // category_id: getCategoryId(transaction),
       })),
     )
 
-    await transactionRepo.save(newTransactions);
+    await transactionsRepo.save(newTransactions);
 
     await fs.promises.unlink(filePath);
 

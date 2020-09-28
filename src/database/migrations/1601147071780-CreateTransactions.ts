@@ -29,6 +29,7 @@ export default class CreateTransactions1601147071780 implements MigrationInterfa
             {
               name: 'category_id',
               type: 'uuid',
+              isNullable: true,
             },
             {
               name: 'created_at',
